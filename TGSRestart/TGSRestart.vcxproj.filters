@@ -36,9 +36,6 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="tgs-tg-logo.png">
-      <Filter>Resource Files</Filter>
-    </Image>
     <Image Include="tgs-tg-logo.ico">
       <Filter>Resource Files</Filter>
     </Image>

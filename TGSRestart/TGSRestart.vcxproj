@@ -140,7 +140,6 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="tgs-tg-logo.ico" />
-    <Image Include="tgs-tg-logo.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
