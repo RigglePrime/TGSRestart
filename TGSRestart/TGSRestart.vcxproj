@@ -133,13 +133,12 @@
   <ItemGroup>
     <ClInclude Include="constants.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="resource1.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="TGSRestart.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="tgs-tg-logo.ico" />
+    <Image Include="tgsrestart.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

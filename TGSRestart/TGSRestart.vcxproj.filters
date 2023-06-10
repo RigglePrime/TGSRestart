@@ -26,9 +26,6 @@
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="resource1.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="TGSRestart.rc">
@@ -36,7 +33,7 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="tgs-tg-logo.ico">
+    <Image Include="tgsrestart.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
