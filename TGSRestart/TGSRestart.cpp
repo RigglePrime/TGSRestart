@@ -14,6 +14,8 @@
 
 #pragma comment(lib, "wbemuuid.lib")
 
+#define CONSOLE_WAIT_SECONDS 3
+
 // Set a default startup type if we fail later
 DWORD g_dwTgServiceStartType = SERVICE_AUTO_START;
 
@@ -52,7 +54,7 @@ BOOL KillProcess(DWORD pid) {
 /// <returns>True if successful, false if not</returns>
 BOOL DisableAndStopTGSService(SC_HANDLE schSCManager) {
 	SC_HANDLE schService;
-	SERVICE_STATUS_PROCESS ssStatus;
+	SERVICE_STATUS_PROCESS ssStatus{};
 	DWORD dwBytesNeeded, cbBufSize;
 	LPQUERY_SERVICE_CONFIG lpsc;
 
@@ -144,9 +146,9 @@ BOOL DisableAndStopTGSService(SC_HANDLE schSCManager) {
 /// <returns>True if successful, false if not</returns>
 BOOL EnableAndStartTGSService(SC_HANDLE schSCManager) {
 	SC_HANDLE schService;
-	SERVICE_STATUS_PROCESS ssStatus;
+	SERVICE_STATUS_PROCESS ssStatus{};
 	DWORD dwOldCheckPoint;
-	DWORD dwStartTickCount;
+	ULONGLONG ullStartTickCount;
 	DWORD dwWaitTime;
 	DWORD dwBytesNeeded;
 	BOOL ret = false;
@@ -193,7 +195,7 @@ BOOL EnableAndStartTGSService(SC_HANDLE schSCManager) {
 	}
 
 	// Save the tick count and initial checkpoint.
-	dwStartTickCount = GetTickCount();
+	ullStartTickCount = GetTickCount64();
 	dwOldCheckPoint = ssStatus.dwCheckPoint;
 
 	// Wait for the service to stop before attempting to start it.
@@ -227,12 +229,12 @@ BOOL EnableAndStartTGSService(SC_HANDLE schSCManager) {
 		if (ssStatus.dwCheckPoint > dwOldCheckPoint)
 		{
 			// Continue to wait and check.
-			dwStartTickCount = GetTickCount();
+			ullStartTickCount = GetTickCount64();
 			dwOldCheckPoint = ssStatus.dwCheckPoint;
 		}
 		else
 		{
-			if (GetTickCount() - dwStartTickCount > ssStatus.dwWaitHint)
+			if (GetTickCount64() - ullStartTickCount > ssStatus.dwWaitHint)
 			{
 				printf("Timeout waiting for service to stop\n");
 				CloseServiceHandle(schService);
@@ -268,7 +270,7 @@ BOOL EnableAndStartTGSService(SC_HANDLE schSCManager) {
 
 	// Save the tick count and initial checkpoint.
 
-	dwStartTickCount = GetTickCount();
+	ullStartTickCount = GetTickCount64();
 	dwOldCheckPoint = ssStatus.dwCheckPoint;
 
 	while (ssStatus.dwCurrentState == SERVICE_START_PENDING)
@@ -300,12 +302,12 @@ BOOL EnableAndStartTGSService(SC_HANDLE schSCManager) {
 		if (ssStatus.dwCheckPoint > dwOldCheckPoint)
 		{
 			// Continue to wait and check.
-			dwStartTickCount = GetTickCount64();
+			ullStartTickCount = GetTickCount64();
 			dwOldCheckPoint = ssStatus.dwCheckPoint;
 		}
 		else
 		{
-			if (GetTickCount64() - dwStartTickCount > 10000)
+			if (GetTickCount64() - ullStartTickCount > 10000)
 			{
 				// More than 10 seconds have passed and the service hasn't started yet
 				break;
@@ -328,7 +330,6 @@ BOOL EnableAndStartTGSService(SC_HANDLE schSCManager) {
 		printf("  Wait Hint: %d\n", ssStatus.dwWaitHint);
 	}
 
-cleanup:
 	CloseServiceHandle(schService);
 	return ret;
 }
@@ -398,7 +399,7 @@ BOOL HandleDreamdaemon(DWORD pid, IWbemServices* pSvc) {
 
 	// Get command line args
 	VARIANT vtProp;
-	pclsObj->Get(TEXT("CommandLine"), 0, &vtProp, 0, 0);
+	pclsObj->Get(TEXT("CommandLine"), 0, _Out_ &vtProp, 0, 0);
 	int len = SysStringLen(vtProp.bstrVal) + 1;
 	wchar_t* wcCommandLine = new wchar_t[len];
 	wcscpy_s(wcCommandLine, len, vtProp.bstrVal);
@@ -614,12 +615,16 @@ void WmiUninit(IWbemLocator** pLoc, IWbemServices** pSvc) {
 }
 
 int run(void) {
+	bool pause = false;
+	HANDLE hStdin = 0;
 	HANDLE hProcessSnap = 0;
-	PROCESSENTRY32 pe32;
+	PROCESSENTRY32 pe32{};
 	DWORD dwTgsPid = 0;
 	DWORD ret = 0;
 	IWbemLocator* pLoc = NULL;
 	IWbemServices* pSvc = NULL;
+	DWORD curEvents = 0;
+	DWORD startEvents = 0;
 
 	// Init Wmi (so we can get command line params)
 	// Yes there are other ways, no they're not supported. I'm not calling
@@ -674,6 +679,36 @@ int run(void) {
 		//}
 	} while (Process32Next(hProcessSnap, &pe32));
 
+	puts("TGS has been killed.\n");
+	hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	// Get the number of starting events
+	GetNumberOfConsoleInputEvents(hStdin, &startEvents);
+	// So we can track how many characters we've written, so we can replace them with whitespace later
+	int toWrite;
+	for (int i = CONSOLE_WAIT_SECONDS * 10; i > 0; i--) {
+		// Note to self: Windows doesn't like %n and doesn't tell you anywhere. It just says "invalid parameter".
+		// https://learn.microsoft.com/en-us/cpp/c-runtime-library/format-specification-syntax-printf-and-wprintf-functions
+		toWrite = printf_s("Restarting TGS in %i.%i... (press any key to cancel)\r", i / 10, i % 10);
+		// See if we have any new key events
+		GetNumberOfConsoleInputEvents(hStdin, &curEvents);
+		if (curEvents > startEvents) {
+			pause = true;
+			break;
+		}
+		Sleep(100);
+	}
+	int written;
+	if (pause) {
+		putchar('\n');
+		puts("Restart halted.");
+		system("pause"); // Press any key to continue...
+	}
+	written = puts("Restarting TGS...");
+	// Remove leftover chars from our screen
+	for (int i = 0; i < toWrite - written; i++)
+		putchar(' ');
+	putchar('\n');
+
 cleanup:
 	// If we fail at any point, try to re-enable the service
 	if (!EnableAndStartTGSService(schSCManager)) {
@@ -685,6 +720,8 @@ cleanup:
 			0);
 	}
 	// Release handles
+	if (hStdin != 0)
+		CloseHandle(hStdin);
 	if (hProcessSnap != 0)
 		CloseHandle(hProcessSnap);
 	if (schSCManager != 0)
